@@ -36,12 +36,76 @@ markdown = [
     "weasyprint>=60.0",
     "pygments>=2.10.0",
 ]
+video = [
+    # Core ML dependencies - flexible versions for compatibility
+    "torch>=2.1.2",
+    "torchvision>=0.16.2",
+    "torchaudio>=2.1.2",
+    "accelerate>=0.30.1",
+    "bitsandbytes>=0.43.1",  # Use >= to allow macOS-compatible versions
+    # Video processing
+    "moviepy==1.0.3",
+    # Multi-modal and vision
+    "timm",
+    "ftfy",
+    "regex",
+    "einops",
+    "fvcore",
+    "eva-decord==0.6.1",
+    "iopath",
+    "matplotlib",
+    "types-regex",
+    "cartopy",
+    # Audio processing
+    "ctranslate2==4.4.0",
+    "faster-whisper==1.0.3",
+    # Vector databases
+    "neo4j",
+    "hnswlib",
+    "xxhash",
+    "nano-vectordb",
+    # Language models
+    "transformers>=4.37.1",  # Flexible version (VideoRAG wants 4.37.1, MinerU wants >=4.49.0)
+    "tiktoken",
+    "tenacity",
+    "ollama==0.5.3",
+    # Note: pytorchvideo and ImageBind need manual installation from git:
+    # pip install git+https://github.com/facebookresearch/pytorchvideo.git@28fe037d212663c6a24f373b94cc5d478c8c1a1d
+    # pip install --no-deps git+https://github.com/facebookresearch/ImageBind.git@3fcf5c9039de97f6ff5528ee4a9dce903c5979b3
+]
 all = [
     "Pillow>=10.0.0",
     "reportlab>=4.0.0",
     "markdown>=3.4.0",
     "weasyprint>=60.0",
-    "pygments>=2.10.0"
+    "pygments>=2.10.0",
+    # Video processing dependencies - flexible versions for compatibility
+    "torch>=2.1.2",
+    "torchvision>=0.16.2",
+    "torchaudio>=2.1.2",
+    "accelerate>=0.30.1",
+    "bitsandbytes>=0.43.1",  # Use >= to allow macOS-compatible versions
+    "moviepy==1.0.3",
+    "timm",
+    "ftfy",
+    "regex",
+    "einops",
+    "fvcore",
+    "eva-decord==0.6.1",
+    "iopath",
+    "matplotlib",
+    "types-regex",
+    "cartopy",
+    "ctranslate2==4.4.0",
+    "faster-whisper==1.0.3",
+    "neo4j",
+    "hnswlib",
+    "xxhash",
+    "nano-vectordb",
+    "transformers>=4.37.1",  # Flexible version (VideoRAG wants 4.37.1, MinerU wants >=4.49.0)
+    "tiktoken",
+    "tenacity",
+    "ollama==0.5.3",
 ]
 
 [project.urls]

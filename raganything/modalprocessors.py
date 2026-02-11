@@ -1567,3 +1567,400 @@ class GenericModalProcessor(BaseModalProcessor):
                 "summary": response[:100] + "..." if len(response) > 100 else response,
             }
             return response, fallback_entity
+
+
+class VideoModalProcessor(BaseModalProcessor):
+    """Processor for video content using VideoRAG integration.
+
+    This processor wraps VideoRAG functionality to enable video processing
+    within the RAG-Anything framework. It handles video indexing, transcript
+    extraction, and visual captioning through the VideoRAG pipeline.
+
+    Note: VideoRAG is an optional heavy dependency requiring ImageBind, Whisper,
+    and vision-language models. Video processing is disabled by default.
+    """
+
+    def __init__(
+        self,
+        lightrag: LightRAG,
+        modal_caption_func,
+        context_extractor: ContextExtractor = None,
+        videorag_working_dir: str = None,
+        video_segment_length: int = 30,
+        llm_provider: str = "openai",
+    ):
+        """Initialize video processor with VideoRAG configuration.
+
+        Args:
+            lightrag: LightRAG instance for knowledge graph integration
+            modal_caption_func: Function for generating descriptions
+            context_extractor: Context extractor instance for surrounding content
+            videorag_working_dir: Working directory for VideoRAG storage
+            video_segment_length: Length of video segments in seconds (default: 30)
+            llm_provider: LLM provider for VideoRAG ('openai', 'deepseek', 'ollama')
+        """
+        super().__init__(lightrag, modal_caption_func, context_extractor)
+        self.videorag_working_dir = videorag_working_dir
+        self.video_segment_length = video_segment_length
+        self.llm_provider = llm_provider
+        self._videorag = None  # Lazy initialization
+        self._processed_videos = set()  # Track already processed videos
+
+    def _get_videorag(self):
+        """Lazy initialize VideoRAG instance.
+
+        Returns:
+            VideoRAG: Initialized VideoRAG instance
+
+        Raises:
+            ImportError: If VideoRAG is not installed
+        """
+        if self._videorag is None:
+            try:
+                from videorag import VideoRAG
+                from videorag._llm import (
+                    openai_config,
+                    ollama_config,
+                )
+
+                # Try to import deepseek config if available
+                try:
+                    from videorag._llm import deepseek_bge_config
+                except ImportError:
+                    deepseek_bge_config = None
+
+                # Select LLM configuration based on provider
+                if self.llm_provider == "deepseek" and deepseek_bge_config is not None:
+                    llm_config = deepseek_bge_config
+                elif self.llm_provider == "ollama":
+                    llm_config = ollama_config
+                else:
+                    llm_config = openai_config
+
+                self._videorag = VideoRAG(
+                    working_dir=self.videorag_working_dir,
+                    llm=llm_config,
+                    video_segment_length=self.video_segment_length,
+                )
+
+                logger.info(
+                    f"VideoRAG initialized with working_dir={self.videorag_working_dir}, "
+                    f"llm_provider={self.llm_provider}"
+                )
+
+            except ImportError as e:
+                raise ImportError(
+                    "VideoRAG is not installed. Please install it to enable video processing. "
+                    "See: https://github.com/HKUDS/VideoRAG for installation instructions."
+                ) from e
+
+        return self._videorag
+
+    async def _index_video_with_videorag(self, video_path: str) -> Dict[str, Any]:
+        """Index a video using VideoRAG and extract segment information.
+
+        Args:
+            video_path: Path to the video file
+
+        Returns:
+            Dict containing video segments information (transcripts, captions, etc.)
+        """
+        import asyncio
+        import os
+
+        video_name = os.path.basename(video_path).split(".")[0]
+
+        # Check if already processed
+        if video_name in self._processed_videos:
+            logger.info(f"Video '{video_name}' already processed, using cached data")
+            videorag = self._get_videorag()
+            if video_name in videorag.video_segments._data:
+                return videorag.video_segments._data[video_name]
+
+        # Run VideoRAG indexing in a thread to avoid blocking
+        def _run_insert():
+            videorag = self._get_videorag()
+            videorag.insert_video(video_path_list=[video_path])
+            return videorag.video_segments._data.get(video_name, {})
+
+        segments_info = await asyncio.to_thread(_run_insert)
+        self._processed_videos.add(video_name)
+
+        return segments_info
+
+    def _extract_video_content(
+        self, segments_info: Dict[str, Any]
+    ) -> Tuple[str, str, float]:
+        """Extract transcript, captions, and duration from video segments.
+
+        Args:
+            segments_info: Video segments information from VideoRAG
+
+        Returns:
+            Tuple of (combined_transcript, combined_captions, total_duration)
+        """
+        transcripts = []
+        captions = []
+        total_duration = 0.0
+
+        for segment_id, segment_data in segments_info.items():
+            if isinstance(segment_data, dict):
+                # Extract transcript
+                transcript = segment_data.get("transcript", "")
+                if transcript:
+                    transcripts.append(f"[{segment_id}] {transcript}")
+
+                # Extract caption
+                caption = segment_data.get("caption", "")
+                if caption:
+                    captions.append(f"[{segment_id}] {caption}")
+
+                # Extract timing info
+                end_time = segment_data.get("end_time", 0)
+                if end_time > total_duration:
+                    total_duration = end_time
+
+        combined_transcript = (
+            "\n".join(transcripts) if transcripts else "No transcript available"
+        )
+        combined_captions = "\n".join(captions) if captions else "No captions available"
+
+        return combined_transcript, combined_captions, total_duration
+
+    async def generate_description_only(
+        self,
+        modal_content,
+        content_type: str,
+        item_info: Dict[str, Any] = None,
+        entity_name: str = None,
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Generate video description and entity info using VideoRAG.
+
+        Args:
+            modal_content: Video content to process (dict with video_path)
+            content_type: Type of modal content ("video")
+            item_info: Item information for context extraction
+            entity_name: Optional predefined entity name
+
+        Returns:
+            Tuple of (enhanced_caption, entity_info)
+        """
+        try:
+            # Parse video content
+            if isinstance(modal_content, str):
+                try:
+                    content_data = json.loads(modal_content)
+                except json.JSONDecodeError:
+                    content_data = {"video_path": modal_content}
+            else:
+                content_data = modal_content
+
+            video_path = content_data.get("video_path")
+            video_name = content_data.get("video_name", "unknown_video")
+
+            if not video_path:
+                raise ValueError(
+                    f"No video path provided in modal_content: {modal_content}"
+                )
+
+            # Index video with VideoRAG and get segments info
+            logger.info(f"Processing video with VideoRAG: {video_path}")
+            segments_info = await self._index_video_with_videorag(video_path)
+
+            # Extract content from segments
+            transcript, captions, duration = self._extract_video_content(segments_info)
+
+            # Extract context for current item
+            context = ""
+            if item_info:
+                context = self._get_context_for_item(item_info)
+
+            # Format duration
+            duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}"
+
+            # Build video analysis prompt
+            if context:
+                video_prompt = PROMPTS.get(
+                    "video_prompt_with_context", PROMPTS["video_prompt"]
+                ).format(
+                    context=context,
+                    entity_name=entity_name if entity_name else video_name,
+                    video_name=video_name,
+                    duration=duration_str,
+                    transcript=transcript[:8000],  # Limit transcript length
+                    captions=captions[:4000],  # Limit captions length
+                )
+            else:
+                video_prompt = PROMPTS["video_prompt"].format(
+                    entity_name=entity_name if entity_name else video_name,
+                    video_name=video_name,
+                    duration=duration_str,
+                    transcript=transcript[:8000],
+                    captions=captions[:4000],
+                )
+
+            # Call LLM for video analysis
+            response = await self.modal_caption_func(
+                video_prompt,
+                system_prompt=PROMPTS["VIDEO_ANALYSIS_SYSTEM"],
+            )
+
+            # Parse response
+            enhanced_caption, entity_info = self._parse_video_response(
+                response, entity_name, video_name
+            )
+
+            return enhanced_caption, entity_info
+
+        except ImportError as e:
+            logger.error(f"VideoRAG not available: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error generating video description: {e}")
+            # Fallback processing
+            fallback_entity = {
+                "entity_name": entity_name
+                if entity_name
+                else f"video_{compute_mdhash_id(str(modal_content))}",
+                "entity_type": "video",
+                "summary": f"Video content: {str(modal_content)[:100]}",
+            }
+            return str(modal_content), fallback_entity
+
+    async def process_multimodal_content(
+        self,
+        modal_content,
+        content_type: str,
+        file_path: str = "manual_creation",
+        entity_name: str = None,
+        item_info: Dict[str, Any] = None,
+        batch_mode: bool = False,
+        doc_id: str = None,
+        chunk_order_index: int = 0,
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Process video content with full entity/chunk creation.
+
+        Args:
+            modal_content: Video content to process
+            content_type: Type of modal content ("video")
+            file_path: Source file path for tracking
+            entity_name: Optional predefined entity name
+            item_info: Item information for context extraction
+            batch_mode: Whether running in batch mode
+            doc_id: Document ID for chunk association
+            chunk_order_index: Order index for chunk
+
+        Returns:
+            Tuple of (summary, entity_info, chunk_results)
+        """
+        try:
+            # Generate description and entity info
+            enhanced_caption, entity_info = await self.generate_description_only(
+                modal_content, content_type, item_info, entity_name
+            )
+
+            # Parse video content for chunk building
+            if isinstance(modal_content, str):
+                try:
+                    content_data = json.loads(modal_content)
+                except json.JSONDecodeError:
+                    content_data = {"video_path": modal_content}
+            else:
+                content_data = modal_content
+
+            video_name = content_data.get("video_name", "unknown_video")
+            video_path = content_data.get("video_path", "")
+
+            # Get segments info for chunk content
+            segments_info = {}
+            if video_path:
+                import os
+
+                video_name_from_path = os.path.basename(video_path).split(".")[0]
+                videorag = self._get_videorag()
+                segments_info = videorag.video_segments._data.get(
+                    video_name_from_path, {}
+                )
+
+            transcript, captions, duration = self._extract_video_content(segments_info)
+            duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}"
+
+            # Build complete video chunk
+            modal_chunk = PROMPTS[
+                "video_chunk"
+            ].format(
+                video_name=video_name,
+                duration=duration_str,
+                transcript=transcript[:4000],  # Limit for chunk
+                captions=captions[:2000],
+                enhanced_caption=enhanced_caption,
+            )
+
+            return await self._create_entity_and_chunk(
+                modal_chunk,
+                entity_info,
+                file_path,
+                batch_mode,
+                doc_id,
+                chunk_order_index,
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing video content: {e}")
+            # Fallback processing
+            fallback_entity = {
+                "entity_name": entity_name
+                if entity_name
+                else f"video_{compute_mdhash_id(str(modal_content))}",
+                "entity_type": "video",
+                "summary": f"Video content: {str(modal_content)[:100]}",
+            }
+            return str(modal_content), fallback_entity
+
+    def _parse_video_response(
+        self, response: str, entity_name: str = None, video_name: str = "video"
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Parse video analysis response.
+
+        Args:
+            response: LLM response text
+            entity_name: Optional predefined entity name
+            video_name: Default video name for fallback
+
+        Returns:
+            Tuple of (description, entity_info)
+        """
+        try:
+            response_data = self._robust_json_parse(response)
+
+            description = response_data.get("detailed_description", "")
+            entity_data = response_data.get("entity_info", {})
+
+            if not description or not entity_data:
+                raise ValueError("Missing required fields in response")
+
+            if not all(
+                key in entity_data for key in ["entity_name", "entity_type", "summary"]
+            ):
+                raise ValueError("Missing required fields in entity_info")
+
+            # Append entity type to name for uniqueness
+            entity_data["entity_name"] = (
+                entity_data["entity_name"] + f" ({entity_data['entity_type']})"
+            )
+            if entity_name:
+                entity_data["entity_name"] = entity_name
+
+            return description, entity_data
+
+        except (json.JSONDecodeError, AttributeError, ValueError) as e:
+            logger.error(f"Error parsing video analysis response: {e}")
+            logger.debug(f"Raw response: {response}")
+            fallback_entity = {
+                "entity_name": entity_name
+                if entity_name
+                else f"{video_name}_{compute_mdhash_id(response)}",
+                "entity_type": "video",
+                "summary": response[:100] + "..." if len(response) > 100 else response,
+            }
+            return response, fallback_entity

@@ -61,11 +61,11 @@ class RAGAnythingConfig:
     supported_file_extensions: List[str] = field(
         default_factory=lambda: get_env_value(
             "SUPPORTED_FILE_EXTENSIONS",
-            ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md",
+            ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.mp4,.avi,.mov,.mkv,.webm,.flv,.wmv,.m4v",
             str,
         ).split(",")
     )
-    """List of supported file extensions for batch processing."""
+    """List of supported file extensions for batch processing. Video formats require enable_video_processing=True."""
 
     recursive_folder_processing: bool = field(
         default=get_env_value("RECURSIVE_FOLDER_PROCESSING", True, bool)
@@ -107,6 +107,28 @@ class RAGAnythingConfig:
     # ---
     use_full_path: bool = field(default=get_env_value("USE_FULL_PATH", False, bool))
     """Whether to use full file path (True) or just basename (False) for file references in LightRAG."""
+
+    # Video Processing Configuration
+    # ---
+    enable_video_processing: bool = field(
+        default=get_env_value("ENABLE_VIDEO_PROCESSING", False, bool)
+    )
+    """Enable video content processing using VideoRAG. Disabled by default (optional dependency)."""
+
+    videorag_working_dir: str = field(
+        default=get_env_value("VIDEORAG_WORKING_DIR", None, str)
+    )
+    """Working directory for VideoRAG. If None, uses working_dir/videorag."""
+
+    video_segment_length: int = field(
+        default=get_env_value("VIDEO_SEGMENT_LENGTH", 30, int)
+    )
+    """Length of video segments in seconds for VideoRAG processing."""
+
+    video_llm_provider: str = field(
+        default=get_env_value("VIDEO_LLM_PROVIDER", "openai", str)
+    )
+    """LLM provider for VideoRAG: 'openai', 'deepseek', or 'ollama'."""
 
     def __post_init__(self):
         """Post-initialization setup for backward compatibility"""

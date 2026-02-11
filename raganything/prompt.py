@@ -351,3 +351,96 @@ PROMPTS["QUERY_GENERIC_ANALYST_SYSTEM"] = (
 PROMPTS["QUERY_ENHANCEMENT_SUFFIX"] = (
     "\n\nPlease provide a comprehensive answer based on the user query and the provided multimodal content information."
 )
+
+# Video analysis prompt templates
+PROMPTS["VIDEO_ANALYSIS_SYSTEM"] = (
+    "You are an expert video content analyst specializing in extracting structured information from video transcripts and visual descriptions."
+)
+
+PROMPTS[
+    "video_prompt"
+] = """Analyze the following video content and provide a JSON response with the following structure:
+
+{{
+    "detailed_description": "A comprehensive analysis of the video content including:
+    - Main topics and themes discussed
+    - Key visual elements and scenes described
+    - Important speakers or presenters (if any)
+    - Timeline of key events or concepts
+    - Technical details and explanations
+    - Relationships between concepts discussed
+    Always use specific names and terminology from the content.",
+    "entity_info": {{
+        "entity_name": "{entity_name}",
+        "entity_type": "video",
+        "summary": "concise summary of the video's purpose and key content (max 100 words)",
+        "key_topics": ["topic1", "topic2", ...],
+        "speakers": ["speaker1", "speaker2", ...],
+        "visual_elements": ["element1", "element2", ...]
+    }}
+}}
+
+Video Information:
+Video Name: {video_name}
+Duration: {duration}
+Transcript: {transcript}
+Visual Captions: {captions}
+
+Focus on extracting meaningful insights that would be useful for knowledge retrieval and understanding the video content."""
+
+PROMPTS[
+    "video_prompt_with_context"
+] = """Analyze the following video content considering the surrounding context, and provide a JSON response with the following structure:
+
+{{
+    "detailed_description": "A comprehensive analysis of the video content including:
+    - Main topics and themes discussed
+    - Key visual elements and scenes described
+    - Important speakers or presenters (if any)
+    - Timeline of key events or concepts
+    - Technical details and explanations
+    - Relationships between concepts discussed and surrounding context
+    - How the video relates to the broader discussion
+    Always use specific names and terminology from the content.",
+    "entity_info": {{
+        "entity_name": "{entity_name}",
+        "entity_type": "video",
+        "summary": "concise summary of the video's purpose, key content, and relationship to surrounding context (max 100 words)",
+        "key_topics": ["topic1", "topic2", ...],
+        "speakers": ["speaker1", "speaker2", ...],
+        "visual_elements": ["element1", "element2", ...]
+    }}
+}}
+
+Context from surrounding content:
+{context}
+
+Video Information:
+Video Name: {video_name}
+Duration: {duration}
+Transcript: {transcript}
+Visual Captions: {captions}
+
+Focus on extracting meaningful insights that incorporate the context and would be useful for knowledge retrieval."""
+
+PROMPTS["video_chunk"] = """Video Content Analysis:
+Video Name: {video_name}
+Duration: {duration}
+Transcript: {transcript}
+Visual Captions: {captions}
+
+Analysis: {enhanced_caption}"""
+
+PROMPTS[
+    "QUERY_VIDEO_ANALYSIS"
+] = """Please analyze the following video content and extract key information:
+
+Video Name: {video_name}
+Transcript: {transcript}
+Visual Captions: {captions}
+
+Please briefly summarize the main content, key topics, and important findings from the video."""
+
+PROMPTS["QUERY_VIDEO_ANALYST_SYSTEM"] = (
+    "You are a professional video content analyst who can accurately analyze and summarize video content."
+)

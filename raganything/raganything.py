@@ -41,6 +41,7 @@ from raganything.modalprocessors import (
     TableModalProcessor,
     EquationModalProcessor,
     GenericModalProcessor,
+    VideoModalProcessor,
     ContextExtractor,
     ContextConfig,
 )
@@ -129,7 +130,8 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         self.logger.info(
             f"  Multimodal processing - Image: {self.config.enable_image_processing}, "
             f"Table: {self.config.enable_table_processing}, "
-            f"Equation: {self.config.enable_equation_processing}"
+            f"Equation: {self.config.enable_equation_processing}, "
+            f"Video: {self.config.enable_video_processing}"
         )
         self.logger.info(f"  Max concurrent files: {self.config.max_concurrent_files}")
 
@@ -207,6 +209,33 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 modal_caption_func=self.llm_model_func,
                 context_extractor=self.context_extractor,
             )
+
+        # Initialize video processor if enabled
+        if self.config.enable_video_processing:
+            try:
+                # Determine VideoRAG working directory
+                videorag_working_dir = self.config.videorag_working_dir
+                if videorag_working_dir is None:
+                    videorag_working_dir = f"{self.config.working_dir}/videorag"
+
+                self.modal_processors["video"] = VideoModalProcessor(
+                    lightrag=self.lightrag,
+                    modal_caption_func=self.llm_model_func,
+                    context_extractor=self.context_extractor,
+                    videorag_working_dir=videorag_working_dir,
+                    video_segment_length=self.config.video_segment_length,
+                    llm_provider=self.config.video_llm_provider,
+                )
+                self.logger.info(
+                    f"Video processor initialized with VideoRAG "
+                    f"(working_dir={videorag_working_dir})"
+                )
+            except ImportError as e:
+                self.logger.warning(
+                    f"VideoRAG not installed, video processing disabled: {e}. "
+                    "Install VideoRAG to enable video processing: "
+                    "https://github.com/HKUDS/VideoRAG"
+                )
 
         # Always include generic processor as fallback
         self.modal_processors["generic"] = GenericModalProcessor(
@@ -450,6 +479,13 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 "enable_image_processing": self.config.enable_image_processing,
                 "enable_table_processing": self.config.enable_table_processing,
                 "enable_equation_processing": self.config.enable_equation_processing,
+                "enable_video_processing": self.config.enable_video_processing,
+            },
+            "video_processing": {
+                "enabled": self.config.enable_video_processing,
+                "videorag_working_dir": self.config.videorag_working_dir,
+                "video_segment_length": self.config.video_segment_length,
+                "video_llm_provider": self.config.video_llm_provider,
             },
             "context_extraction": {
                 "context_window": self.config.context_window,

@@ -54,6 +54,7 @@ class Parser:
     OFFICE_FORMATS = {".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"}
     IMAGE_FORMATS = {".png", ".jpeg", ".jpg", ".bmp", ".tiff", ".tif", ".gif", ".webp"}
     TEXT_FORMATS = {".txt", ".md"}
+    VIDEO_FORMATS = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
 
     # Class-level logger
     logger = logging.getLogger(__name__)
@@ -1175,6 +1176,50 @@ class MineruParser(Parser):
             self.logger.error(f"Error in parse_text_file: {str(e)}")
             raise
 
+    def parse_video(
+        self,
+        video_path: Union[str, Path],
+        output_dir: Optional[str] = None,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        """
+        Parse video file into content_list format.
+
+        Note: This method only creates a content_list entry for the video.
+        The actual video processing is handled by VideoModalProcessor using VideoRAG.
+
+        Args:
+            video_path: Path to the video file
+            output_dir: Output directory path (not used for video parsing)
+            **kwargs: Additional parameters (not used)
+
+        Returns:
+            List[Dict[str, Any]]: List containing single video content block
+        """
+        video_path = Path(video_path)
+        if not video_path.exists():
+            raise FileNotFoundError(f"Video file does not exist: {video_path}")
+
+        ext = video_path.suffix.lower()
+        if ext not in self.VIDEO_FORMATS:
+            raise ValueError(
+                f"Unsupported video format: {ext}. "
+                f"Supported formats: {', '.join(self.VIDEO_FORMATS)}"
+            )
+
+        self.logger.info(f"Parsing video file: {video_path.name}")
+
+        # Return a content list entry for the video
+        # The actual processing will be done by VideoModalProcessor
+        return [
+            {
+                "type": "video",
+                "page_idx": 0,
+                "video_path": str(video_path.resolve()),
+                "video_name": video_path.stem,
+            }
+        ]
+
     def parse_document(
         self,
         file_path: Union[str, Path],
@@ -1217,6 +1262,8 @@ class MineruParser(Parser):
             return self.parse_office_doc(file_path, output_dir, lang, **kwargs)
         elif ext in self.TEXT_FORMATS:
             return self.parse_text_file(file_path, output_dir, lang, **kwargs)
+        elif ext in self.VIDEO_FORMATS:
+            return self.parse_video(file_path, output_dir, **kwargs)
         else:
             # For unsupported file types, try as PDF
             self.logger.warning(

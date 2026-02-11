@@ -233,7 +233,9 @@ def get_processor_for_type(modal_processors: Dict[str, Any], content_type: str):
         Corresponding processor instance
     """
     # Direct mapping to corresponding processor
-    if content_type == "image":
+    if content_type == "video":
+        return modal_processors.get("video")
+    elif content_type == "image":
         return modal_processors.get("image")
     elif content_type == "table":
         return modal_processors.get("table")
@@ -247,6 +249,13 @@ def get_processor_for_type(modal_processors: Dict[str, Any], content_type: str):
 def get_processor_supports(proc_type: str) -> List[str]:
     """Get processor supported features"""
     supports_map = {
+        "video": [
+            "Video content analysis",
+            "Audio transcription",
+            "Visual captioning",
+            "Video entity extraction",
+            "Multi-modal video understanding",
+        ],
         "image": [
             "Image content analysis",
             "Visual understanding",

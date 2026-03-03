@@ -10,8 +10,21 @@ Requirements:
 - Test video file must exist at the specified path
 
 Usage:
-    # Set multiprocessing method before running (required for VideoRAG)
-    python examples/video_processing_test.py
+    # Basic test (uses temp directories, artifacts are deleted after run)
+    RUN_FULL_VIDEO_TESTS=true uv run python examples/video_processing_test.py ~/Downloads/windmill.mp4 "What is this video about?"
+
+    # Preserve intermediate artifacts for debugging
+    RUN_FULL_VIDEO_TESTS=true ARTIFACT_DIR=./video_artifacts uv run python examples/video_processing_test.py ~/Downloads/windmill.mp4 "What is this video about?"
+
+    # The ARTIFACT_DIR will contain:
+    # - graph_chunk_entity_relation.graphml: Knowledge graph
+    # - vdb_entities.json: Entity embeddings
+    # - videorag/: VideoRAG processing data (segments, transcripts, captions)
+    # - output/: Parsed content output
+
+Environment Variables:
+    RUN_FULL_VIDEO_TESTS=true  - Enable full processing and query tests
+    ARTIFACT_DIR=./path        - Directory to preserve intermediate artifacts
 """
 
 import os
@@ -32,7 +45,10 @@ if __name__ == "__main__":
 
 # Add paths for local development
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, "/Users/pinggan/RAGAll/VideoRAG/VideoRAG-algorithm")
+sys.path.insert(0, "/home/gq/RAGAll/VideoRAG/VideoRAG-algorithm")
+
+# Ensure VideoRAG uses the correct base URL (reads OPENAI_BASE_URL env var internally)
+os.environ.setdefault("OPENAI_BASE_URL", "https://aihubmix.com/v1")
 
 from raganything import RAGAnything, RAGAnythingConfig
 
@@ -44,7 +60,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Test video path
-TEST_VIDEO = "/Users/pinggan/RAGAll/fouriertransform.mp4"
+TEST_VIDEO = sys.argv[1]
+
+# Preserve artifacts for debugging (set ARTIFACT_DIR env var)
+ARTIFACT_DIR = os.environ.get("ARTIFACT_DIR", None)
 
 
 async def create_llm_functions():
@@ -82,6 +101,119 @@ async def create_llm_functions():
         max_token_size=8192,
         func=embedding_func,
     )
+
+
+async def _debug_print_knowledge_graph(rag, work_dir):
+    """Debug function to print extracted entities and relations from knowledge graph."""
+    import json
+
+    logger.info("=" * 60)
+    logger.info("DEBUG: Knowledge Graph Contents")
+    logger.info("=" * 60)
+
+    try:
+        # Check if LightRAG is initialized
+        if rag.lightrag is None:
+            logger.warning("LightRAG not initialized")
+            return
+
+        # Get entities from vector DB
+        entities_vdb = rag.lightrag.entities_vdb
+        if entities_vdb:
+            try:
+                # Access the internal data
+                entity_data = (
+                    entities_vdb._data if hasattr(entities_vdb, "_data") else {}
+                )
+                logger.info(f"Total entities in vector DB: {len(entity_data)}")
+
+                # Print entity names
+                entity_names = []
+                for entity_id, entity_info in entity_data.items():
+                    if isinstance(entity_info, dict):
+                        entity_names.append(entity_info.get("entity_name", entity_id))
+                    else:
+                        entity_names.append(entity_id)
+
+                logger.info(f"Entity names: {entity_names[:50]}...")  # First 50
+            except Exception as e:
+                logger.warning(f"Could not read entities_vdb: {e}")
+
+        # Get relations from vector DB
+        relationships_vdb = rag.lightrag.relationships_vdb
+        if relationships_vdb:
+            try:
+                rel_data = (
+                    relationships_vdb._data
+                    if hasattr(relationships_vdb, "_data")
+                    else {}
+                )
+                logger.info(f"Total relations in vector DB: {len(rel_data)}")
+            except Exception as e:
+                logger.warning(f"Could not read relationships_vdb: {e}")
+
+        # Check graph file
+        graph_file = os.path.join(work_dir, "graph_chunk_entity_relation.graphml")
+        if os.path.exists(graph_file):
+            logger.info(f"Graph file exists: {graph_file}")
+            logger.info(f"Graph file size: {os.path.getsize(graph_file)} bytes")
+
+        # Check VideoRAG data
+        videorag_dir = os.path.join(work_dir, "videorag")
+        if os.path.exists(videorag_dir):
+            logger.info(f"VideoRAG directory exists: {videorag_dir}")
+
+            # Check video segments
+            segments_file = os.path.join(videorag_dir, "video_segments.json")
+            if os.path.exists(segments_file):
+                with open(segments_file, "r") as f:
+                    segments_data = json.load(f)
+                logger.info(f"Video segments: {len(segments_data)} videos")
+
+                # Print segment info for first video
+                for video_name, segments in segments_data.items():
+                    logger.info(f"  Video '{video_name}': {len(segments)} segments")
+                    # Print first few segment summaries
+                    for seg_id, seg_data in list(segments.items())[:3]:
+                        transcript = seg_data.get("transcript", "")[:100]
+                        caption = seg_data.get("caption", "")[:100]
+                        logger.info(f"    Segment {seg_id}:")
+                        if transcript:
+                            logger.info(f"      Transcript: {transcript}...")
+                        if caption:
+                            logger.info(f"      Caption: {caption}...")
+                    break  # Only first video
+
+            # Check VideoRAG entities
+            vr_entities_file = os.path.join(videorag_dir, "vdb_entities.json")
+            if os.path.exists(vr_entities_file):
+                with open(vr_entities_file, "r") as f:
+                    vr_entities = json.load(f)
+                logger.info(
+                    f"VideoRAG entities: {len(vr_entities.get('data', []))} entities"
+                )
+
+            # Check VideoRAG chunks
+            vr_chunks_file = os.path.join(videorag_dir, "vdb_chunks.json")
+            if os.path.exists(vr_chunks_file):
+                with open(vr_chunks_file, "r") as f:
+                    vr_chunks = json.load(f)
+                chunks = vr_chunks.get("data", [])
+                logger.info(f"VideoRAG chunks: {len(chunks)} chunks")
+                # Print first few chunk previews
+                for i, chunk in enumerate(chunks[:3]):
+                    body = chunk.get("body", "")[:200]
+                    logger.info(f"  Chunk {i}: {body}...")
+
+        logger.info("=" * 60)
+        logger.info("END DEBUG: Knowledge Graph Contents")
+        logger.info("=" * 60)
+
+    except Exception as e:
+        logger.error(f"Error printing knowledge graph: {e}")
+        import traceback
+
+        traceback.print_exc()
 
 
 async def test_video_parsing():
@@ -175,48 +307,66 @@ async def test_full_video_processing():
         logger.error(f"Test video not found: {TEST_VIDEO}")
         return False
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        llm_func, embed_func = await create_llm_functions()
+    # Use persistent directory if ARTIFACT_DIR is set, otherwise use temp
+    if ARTIFACT_DIR:
+        work_dir = os.path.join(ARTIFACT_DIR, "video_processing_test")
+        os.makedirs(work_dir, exist_ok=True)
+        logger.info(f"Using persistent working directory: {work_dir}")
+        tmpdir_ctx = None
+        tmpdir = work_dir
+    else:
+        tmpdir_ctx = tempfile.TemporaryDirectory()
+        tmpdir = tmpdir_ctx.__enter__()
 
-        config = RAGAnythingConfig(
-            working_dir=tmpdir,
-            enable_video_processing=True,
-            enable_image_processing=False,
-            enable_table_processing=False,
-            enable_equation_processing=False,
-            video_segment_length=30,
-            video_llm_provider="openai",
+    llm_func, embed_func = await create_llm_functions()
+
+    config = RAGAnythingConfig(
+        working_dir=tmpdir,
+        enable_video_processing=True,
+        enable_image_processing=False,
+        enable_table_processing=False,
+        enable_equation_processing=False,
+        video_segment_length=30,
+        video_llm_provider="openai",
+    )
+
+    rag = RAGAnything(
+        config=config,
+        llm_model_func=llm_func,
+        embedding_func=embed_func,
+    )
+
+    try:
+        # Process video
+        logger.info(f"Processing video: {TEST_VIDEO}")
+        logger.info("This may take several minutes for the first run...")
+
+        await rag.process_document_complete(
+            TEST_VIDEO,
+            output_dir=os.path.join(tmpdir, "output"),
         )
 
-        rag = RAGAnything(
-            config=config,
-            llm_model_func=llm_func,
-            embedding_func=embed_func,
-        )
+        # Debug: Print extracted entities
+        await _debug_print_knowledge_graph(rag, tmpdir)
 
-        try:
-            # Process video
-            logger.info(f"Processing video: {TEST_VIDEO}")
-            logger.info("This may take several minutes for the first run...")
+        logger.info("[PASS] Video processed successfully")
+        return True
 
-            await rag.process_document_complete(
-                TEST_VIDEO,
-                output_dir=os.path.join(tmpdir, "output"),
-            )
+    except ImportError as e:
+        logger.warning(f"[SKIP] VideoRAG not installed: {e}")
+        return True  # Not a failure, just VideoRAG not available
 
-            logger.info("[PASS] Video processed successfully")
-            return True
+    except Exception as e:
+        logger.error(f"[FAIL] Video processing error: {e}")
+        import traceback
 
-        except ImportError as e:
-            logger.warning(f"[SKIP] VideoRAG not installed: {e}")
-            return True  # Not a failure, just VideoRAG not available
+        traceback.print_exc()
+        return False
 
-        except Exception as e:
-            logger.error(f"[FAIL] Video processing error: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
+    finally:
+        # Clean up temp directory if we created one
+        if tmpdir_ctx:
+            tmpdir_ctx.__exit__(None, None, None)
 
 
 async def test_video_query():
@@ -229,69 +379,82 @@ async def test_video_query():
         logger.error(f"Test video not found: {TEST_VIDEO}")
         return False
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        llm_func, embed_func = await create_llm_functions()
+    # Use persistent directory if ARTIFACT_DIR is set, otherwise use temp
+    if ARTIFACT_DIR:
+        work_dir = os.path.join(ARTIFACT_DIR, "video_query_test")
+        os.makedirs(work_dir, exist_ok=True)
+        logger.info(f"Using persistent working directory: {work_dir}")
+        tmpdir_ctx = None
+        tmpdir = work_dir
+    else:
+        tmpdir_ctx = tempfile.TemporaryDirectory()
+        tmpdir = tmpdir_ctx.__enter__()
 
-        config = RAGAnythingConfig(
-            working_dir=tmpdir,
-            enable_video_processing=True,
-            enable_image_processing=False,
-            enable_table_processing=False,
-            enable_equation_processing=False,
+    llm_func, embed_func = await create_llm_functions()
+
+    config = RAGAnythingConfig(
+        working_dir=tmpdir,
+        enable_video_processing=True,
+        enable_image_processing=False,
+        enable_table_processing=False,
+        enable_equation_processing=False,
+    )
+
+    rag = RAGAnything(
+        config=config,
+        llm_model_func=llm_func,
+        embedding_func=embed_func,
+    )
+
+    try:
+        # First process the video
+        logger.info("Processing video for query test...")
+        await rag.process_document_complete(
+            TEST_VIDEO,
+            output_dir=os.path.join(tmpdir, "output"),
         )
 
-        rag = RAGAnything(
-            config=config,
-            llm_model_func=llm_func,
-            embedding_func=embed_func,
-        )
+        # Debug: Print extracted entities for inspection
+        await _debug_print_knowledge_graph(rag, tmpdir)
 
-        try:
-            # First process the video
-            logger.info("Processing video for query test...")
-            await rag.process_document_complete(
-                TEST_VIDEO,
-                output_dir=os.path.join(tmpdir, "output"),
-            )
+        # Test query
+        query = sys.argv[2]
+        logger.info(f"Querying: {query}")
 
-            # Test query
-            query = (
-                "What is the Fourier transform and how is it explained in the video?"
-            )
-            logger.info(f"Querying: {query}")
+        response = await rag.aquery(query, mode="hybrid")
 
-            response = await rag.aquery(query, mode="hybrid")
+        if response and len(response) > 0:
+            logger.info("[PASS] Query returned response")
+            logger.info(f"  - Response length: {len(response)} characters")
+            logger.info(f"  - Response preview: {response[:200]}...")
 
-            if response and len(response) > 0:
-                logger.info("[PASS] Query returned response")
-                logger.info(f"  - Response length: {len(response)} characters")
-                logger.info(f"  - Response preview: {response[:200]}...")
-
-                # Check if response contains relevant content
-                response_lower = response.lower()
-                if "fourier" in response_lower or "transform" in response_lower:
-                    logger.info("[PASS] Response contains relevant content")
-                    return True
-                else:
-                    logger.warning(
-                        "[WARN] Response may not contain video-specific content"
-                    )
-                    return True  # Still a pass if we got a response
-
+            # Check if response contains relevant content
+            response_lower = response.lower()
+            if "fourier" in response_lower or "transform" in response_lower:
+                logger.info("[PASS] Response contains relevant content")
+                return True
             else:
-                logger.error("[FAIL] Query returned empty response")
-                return False
-
-        except ImportError as e:
-            logger.warning(f"[SKIP] VideoRAG not installed: {e}")
-            return True
-
-        except Exception as e:
-            logger.error(f"[FAIL] Query error: {e}")
-            import traceback
-
-            traceback.print_exc()
+                logger.warning("[WARN] Response may not contain video-specific content")
+                return True  # Still a pass if we got a response
+        else:
+            logger.error("[FAIL] Query returned empty response")
             return False
+
+    except ImportError as e:
+        logger.warning(f"[SKIP] VideoRAG not installed: {e}")
+        return True
+
+    except Exception as e:
+        logger.error(f"[FAIL] Query error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+
+    finally:
+        # Clean up temp directory if we created one
+        if tmpdir_ctx:
+            tmpdir_ctx.__exit__(None, None, None)
 
 
 async def test_config_options():

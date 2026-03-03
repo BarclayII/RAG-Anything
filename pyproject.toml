@@ -69,9 +69,11 @@ video = [
     "tiktoken",
     "tenacity",
     "ollama==0.5.3",
-    # Note: pytorchvideo and ImageBind need manual installation from git:
-    # pip install git+https://github.com/facebookresearch/pytorchvideo.git@28fe037d212663c6a24f373b94cc5d478c8c1a1d
-    # pip install --no-deps git+https://github.com/facebookresearch/ImageBind.git@3fcf5c9039de97f6ff5528ee4a9dce903c5979b3
+    # ImageBind requires pkg_resources from setuptools<81
+    "setuptools<81",
+    # Note: pytorchvideo and ImageBind need manual installation:
+    # pip install -e /path/to/pytorchvideo  (local fork)
+    # pip install --no-deps git+https://github.com/facebookresearch/ImageBind.git
 ]
 all = [
     "Pillow>=10.0.0",
@@ -106,6 +108,7 @@ all = [
     "tiktoken",
     "tenacity",
     "ollama==0.5.3",
+    "setuptools<81",
 ]
 
 [project.urls]

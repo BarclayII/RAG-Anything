@@ -60,6 +60,8 @@ TEST_VIDEO = sys.argv[1]
 
 # Preserve artifacts for debugging (set ARTIFACT_DIR env var)
 ARTIFACT_DIR = os.environ.get("ARTIFACT_DIR", None)
+EMBED_MODEL = os.environ.get("EMBED_MODEL", "text-embedding-3-small")
+COMPLETION_MODEL = os.environ.get("COMPLETION_MODEL", "gpt-4o-mini")
 
 
 async def create_llm_functions():
@@ -75,7 +77,7 @@ async def create_llm_functions():
         prompt, system_prompt=None, history_messages=[], **kwargs
     ) -> str:
         return await openai_complete_if_cache(
-            "gpt-4o-mini",
+            COMPLETION_MODEL,
             prompt,
             system_prompt=system_prompt,
             history_messages=history_messages,
@@ -87,7 +89,7 @@ async def create_llm_functions():
     async def embedding_func(texts: list[str]) -> list[list[float]]:
         return await openai_embed(
             texts,
-            model="text-embedding-3-small",
+            model=EMBED_MODEL,
             base_url=OPENAI_BASE_URL,
             api_key=OPENAI_API_KEY,
         )

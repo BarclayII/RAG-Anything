@@ -45,10 +45,6 @@ if __name__ == "__main__":
 
 # Add paths for local development
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, "/home/gq/RAGAll/VideoRAG/VideoRAG-algorithm")
-
-# Ensure VideoRAG uses the correct base URL (reads OPENAI_BASE_URL env var internally)
-os.environ.setdefault("OPENAI_BASE_URL", "https://aihubmix.com/v1")
 
 from raganything import RAGAnything, RAGAnythingConfig
 
@@ -72,7 +68,7 @@ async def create_llm_functions():
     from lightrag.utils import EmbeddingFunc
 
     # AIHubMix configuration
-    OPENAI_BASE_URL = "https://aihubmix.com/v1"
+    OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL")
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
     async def llm_model_func(

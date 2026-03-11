@@ -57,8 +57,8 @@ video = [
     "types-regex",
     "cartopy",
     # Audio processing
-    "ctranslate2==4.4.0",
-    "faster-whisper==1.0.3",
+    "ctranslate2>=4.4.0",
+    "faster-whisper>=1.1.0",
     # Vector databases
     "neo4j",
     "hnswlib",
@@ -98,8 +98,8 @@ all = [
     "matplotlib",
     "types-regex",
     "cartopy",
-    "ctranslate2==4.4.0",
-    "faster-whisper==1.0.3",
+    "ctranslate2>=4.4.0",
+    "faster-whisper>=1.1.0",
     "neo4j",
     "hnswlib",
     "xxhash",
